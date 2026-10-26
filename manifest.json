@@ -1,0 +1,10 @@
+{
+    "display_name": "星语 · Starlit Words",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "Issa",
+    "version": "1.0.0",
+    "homePageUrl": ""
+}
