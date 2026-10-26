@@ -172,6 +172,14 @@
         save();
     }
 
+    // 现在还存在的角色（和群聊），用来在导出时标出「已删除」
+    function aliveKeys() {
+        const c = getCtx(), alive = new Set();
+        if (c && Array.isArray(c.characters)) c.characters.forEach(ch => ch && ch.avatar && alive.add(ch.avatar));
+        if (c && Array.isArray(c.groups)) c.groups.forEach(g => alive.add('group:' + g.id));
+        return alive;
+    }
+
     /* ───────── 绘制 ───────── */
     function riseOrigin() {
         const sf = document.getElementById('send_form');
@@ -385,7 +393,7 @@
 
     /* ───────── 点击珍藏星（只在没有被界面挡住的空白处） ───────── */
     const CHAT_BLOCK = '#sheld,#top-bar,#top-settings-holder,.drawer-content,#left-nav-panel,#right-nav-panel,' +
-                       '.popup,dialog,#send_form,#starlit-words-card,#starlit-words-keepbtn,#starlit-words-list,' +
+                       '.popup,dialog,#send_form,#starlit-words-card,#starlit-words-keepbtn,#starlit-words-list,#starlit-words-chooser,' +
                        'input,textarea,button,a,select';
     function keepAt(x, y) {
         let best = null, bd = 18;
@@ -406,7 +414,7 @@
         if (tg.closest && tg.closest(CHAT_BLOCK)) return;
         document.body.style.cursor = keepAt(e.clientX, e.clientY) ? 'pointer' : '';
     }, { passive: true });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') { hideCard(); hideList(); } });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { hideCard(); hideList(); hideChooser(); } });
 
     /* ───────── 导出 ───────── */
     function download(name, text, type) {
@@ -519,18 +527,6 @@ if(document.fonts)document.fonts.ready.then(layout);
         const name = owner ? owner.name : '聊天';
         const html = scrollHTML([{ title: name, total: stars.length, keeps: keeps.map(k => ({ text: k.text, who: k.who, when: k.when })) }]);
         download(`星图卷轴-${name}-${stamp()}.html`, html, 'text/html;charset=utf-8');
-    }
-    function exportScrollAll() {
-        const e = store();
-        if (!e) return;
-        const sections = [];
-        for (const ent of Object.values(e.index)) {
-            const chats = Object.values(ent.chats || {});
-            const ks = chats.flatMap(v => v.keeps || []);
-            if (ks.length) sections.push({ title: ent.name, total: chats.reduce((s, v) => s + (v.msgs || 0), 0), keeps: ks });
-        }
-        if (!sections.length) { toast('还没有任何珍藏的话'); return; }
-        download(`星图卷轴-全部-${stamp()}.html`, scrollHTML(sections), 'text/html;charset=utf-8');
     }
 
     /* ───────── 分享图片：长图 / 单句卡片（.png） ───────── */
@@ -822,17 +818,81 @@ if(document.fonts)document.fonts.ready.then(layout);
         if (!chatId || !keeps.length) { toast('这个聊天还没有珍藏的话'); return; }
         exportImages([{ title: owner ? owner.name : '聊天', total: stars.length, keeps: keeps.map(k => ({ text: k.text, who: k.who, when: k.when })) }]);
     }
-    function exportImageAll() {
-        const e = store();
-        if (!e) return;
-        const sections = [];
-        for (const ent of Object.values(e.index)) {
+
+    /* ───────── 导出「全部」：先选要哪些角色 ───────── */
+    function collectSections(keys) {
+        const e = store(), sections = [];
+        if (!e) return sections;
+        for (const [key, ent] of Object.entries(e.index)) {
+            if (!keys.has(key)) continue;
             const chats = Object.values(ent.chats || {}), ks = chats.flatMap(v => v.keeps || []);
             if (ks.length) sections.push({ title: ent.name, total: chats.reduce((s, v) => s + (v.msgs || 0), 0), keeps: ks });
         }
-        if (!sections.length) { toast('还没有任何珍藏的话'); return; }
-        exportImages(sections);
+        return sections;
     }
+    const chooser = document.createElement('div');
+    chooser.id = 'starlit-words-chooser';
+    Object.assign(chooser.style, {
+        position: 'fixed', display: 'none', zIndex: '10005', left: '50%', top: '50%',
+        transform: 'translate(-50%,-50%)', width: 'min(360px, calc(100vw - 32px))',
+        maxHeight: '75vh', overflowY: 'auto', padding: '16px 18px', borderRadius: '8px',
+    });
+    function hideChooser() { chooser.style.display = 'none'; }
+    function openChooser(kind) {
+        const e = store();
+        if (!e) return;
+        const alive = aliveKeys();
+        const rows = Object.entries(e.index).map(([key, ent]) => ({
+            key, name: ent.name,
+            n: Object.values(ent.chats || {}).reduce((s, v) => s + ((v.keeps && v.keeps.length) || 0), 0),
+            alive: alive.has(key),
+        })).filter(r => r.n > 0).sort((a, b) => (b.alive - a.alive) || (b.n - a.n));
+        if (!rows.length) { toast('还没有任何珍藏的话'); return; }
+        detectTheme();
+        const U = ui(), C = colors();
+        chooser.innerHTML = '';
+        chooser.style.background = U.bg; chooser.style.border = '0.5px solid ' + U.border; chooser.style.color = U.text;
+        const title = document.createElement('div');
+        title.textContent = kind === 'image' ? '✦ 选择要画进长图的角色' : '✦ 选择要放进网页卷轴的角色';
+        Object.assign(title.style, { fontSize: '14px', letterSpacing: '2px', color: rgba(C.keep, 1), marginBottom: '10px' });
+        chooser.appendChild(title);
+        const boxes = [];
+        rows.forEach(r => {
+            const lab = document.createElement('label');
+            Object.assign(lab.style, { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderTop: '0.5px solid ' + U.border, cursor: 'pointer', fontSize: '14px' });
+            const cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.checked = r.alive; cb.dataset.key = r.key;
+            const nm = document.createElement('span'); nm.textContent = r.name; nm.style.flex = '1';
+            const meta = document.createElement('span');
+            meta.textContent = (r.alive ? '' : '已删除 · ') + r.n + ' 颗珍藏';
+            Object.assign(meta.style, { fontSize: '12px', color: U.sub });
+            lab.append(cb, nm, meta); chooser.appendChild(lab); boxes.push(cb);
+        });
+        const bar = document.createElement('div');
+        Object.assign(bar.style, { display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', fontSize: '12px', flexWrap: 'wrap' });
+        const link = (t, fn) => { const a = document.createElement('span'); a.textContent = t; Object.assign(a.style, { cursor: 'pointer', color: U.sub }); a.addEventListener('click', fn); return a; };
+        const go = document.createElement('span');
+        go.textContent = kind === 'image' ? '下载长图' : '下载网页卷轴';
+        Object.assign(go.style, { marginLeft: 'auto', cursor: 'pointer', padding: '4px 12px', borderRadius: '4px', border: '0.5px solid ' + U.border, color: rgba(C.keep, 1), fontSize: '13px' });
+        go.addEventListener('click', () => {
+            const keys = new Set(boxes.filter(b => b.checked).map(b => b.dataset.key));
+            if (!keys.size) { toast('请至少选一个角色'); return; }
+            const sections = collectSections(keys);
+            hideChooser();
+            if (kind === 'image') exportImages(sections);
+            else download(`星图卷轴-${stamp()}.html`, scrollHTML(sections), 'text/html;charset=utf-8');
+        });
+        bar.append(
+            link('全选', () => boxes.forEach(b => b.checked = true)),
+            link('全不选', () => boxes.forEach(b => b.checked = false)),
+            link('取消', hideChooser),
+            go,
+        );
+        chooser.appendChild(bar);
+        chooser.style.display = 'block';
+    }
+    const exportImageAll = () => openChooser('image');
+    const exportScrollAll = () => openChooser('scroll');
 
     function exportBackup() {
         const e = store();
@@ -1024,7 +1084,7 @@ if(document.fonts)document.fonts.ready.then(layout);
 
     /* ───────── 启动 ───────── */
     function init() {
-        document.body.append(canvas, card, keepBtn, listPanel);
+        document.body.append(canvas, card, keepBtn, listPanel, chooser);
         resize();
         window.addEventListener('resize', resize);
         document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(checkSelection, 250); });
