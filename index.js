@@ -396,17 +396,54 @@
         keepBtn.style.left = clamp(rect.left + rect.width / 2 - bw / 2, 8, W - bw - 8) + 'px';
         keepBtn.style.top = clamp(rect.bottom + 10, 8, H - 44) + 'px';
     }
+    // 找天空里最空的位置：电脑上优先放在聊天框两侧（看得到也点得到），
+    // 从一批候选点里挑离其他珍藏星最远的那个
+    function pickSpot(others, seed) {
+        const rand = seeded(seed);
+        const sheld = document.getElementById('sheld');
+        const zones = [];
+        if (sheld) {
+            const r = sheld.getBoundingClientRect();
+            if (r.left > 90) zones.push([0.02 * W, r.left - 24]);
+            if (W - r.right > 90) zones.push([r.right + 24, 0.98 * W]);
+        }
+        if (!zones.length) zones.push([0.04 * W, 0.96 * W]);
+        const total = zones.reduce((s, z) => s + (z[1] - z[0]), 0);
+        let best = null, bestD = -1;
+        for (let i = 0; i < 40; i++) {
+            let u = rand() * total, px = zones[0][0];
+            for (const z of zones) { const w = z[1] - z[0]; if (u <= w) { px = z[0] + u; break; } u -= w; }
+            const py = (0.07 + rand() * 0.84) * H;
+            let d = Infinity;
+            for (const o of others) d = Math.min(d, Math.hypot(o.x * W - px, o.y * H - py));
+            if (d > bestD) { bestD = d; best = [px / W, py / H]; }
+        }
+        return best;
+    }
+    function rearrangeKeeps() {
+        const c = getCtx();
+        if (!c || !chatId || !keeps.length) { toast('这个聊天还没有珍藏的星星'); return; }
+        const placed = [];
+        keeps.forEach((k, i) => {
+            const [x, y] = pickSpot(placed, hash(k.id + 'r' + i));
+            k.x = x; k.y = y; placed.push(k);
+            keepPulse[k.id] = performance.now();
+        });
+        if (typeof c.saveMetadata === 'function') c.saveMetadata();
+        hideCard();
+        toast('珍藏星已经重新散开了');
+    }
+
     function keepPending() {
         const c = getCtx();
         if (!pending || !c || !c.chatMetadata || !chatId) return;
         const m = (c.chat || [])[pending.mesId] || {};
-        const s = stars.find(s => s.mesId === pending.mesId);
         const h = hash(pending.text + Date.now());
+        const [x, y] = pickSpot(keeps, h);
         const k = {
             id: Date.now().toString(36) + (h % 1679616).toString(36),
             text: pending.text, who: m.name || '', when: m.send_date || '', mesId: pending.mesId,
-            x: clamp((s ? s.x : 0.5) + (u01(h) - 0.5) * 0.08, 0.04, 0.96),
-            y: clamp((s ? s.y : 0.4) + (u01(mix(h)) - 0.5) * 0.1, 0.05, 0.92),
+            x, y,
         };
         if (!Array.isArray(c.chatMetadata[META_KEY])) c.chatMetadata[META_KEY] = [];
         c.chatMetadata[META_KEY].push(k);
@@ -648,6 +685,10 @@ if(document.fonts)document.fonts.ready.then(layout);
         const title = document.createElement('div');
         title.textContent = '✦ 珍藏的星星';
         Object.assign(title.style, { fontSize: '14px', letterSpacing: '2px', color: rgba(C.keep, 1), flex: '1' });
+        const spread = document.createElement('div');
+        spread.textContent = '散开';
+        Object.assign(spread.style, { cursor: 'pointer', color: U.sub, fontSize: '12px' });
+        spread.addEventListener('click', () => { rearrangeKeeps(); renderList(); });
         const exp = document.createElement('div');
         exp.textContent = '导出卷轴';
         Object.assign(exp.style, { cursor: 'pointer', color: U.sub, fontSize: '12px' });
@@ -656,7 +697,7 @@ if(document.fonts)document.fonts.ready.then(layout);
         close.textContent = '✕';
         Object.assign(close.style, { cursor: 'pointer', color: U.sub, padding: '0 4px' });
         close.addEventListener('click', hideList);
-        head.append(title, exp, close);
+        head.append(title, spread, exp, close);
         listPanel.appendChild(head);
         if (!chatId || !keeps.length) {
             const empty = document.createElement('div');
@@ -739,6 +780,7 @@ if(document.fonts)document.fonts.ready.then(layout);
                     </div>
                     ${SLIDERS.map(([k, n, a, b, st]) =>
                         `<div class="sw-row"><span class="sw-name">${n}</span><input type="range" min="${a}" max="${b}" step="${st}" data-k="${k}"><span class="sw-val"></span></div>`).join('')}
+                    <div class="sw-row"><span class="sw-btn" data-act="spread">重新排列本聊天的珍藏星</span></div>
                     <div class="sw-checks">
                         <label><input type="checkbox" data-k="rise">新消息升起动画</label>
                         <label><input type="checkbox" data-k="galaxies">首页显示角色星系</label>
@@ -793,6 +835,7 @@ if(document.fonts)document.fonts.ready.then(layout);
         wrap.querySelectorAll('[data-paper]').forEach(el => el.addEventListener('click', () => {
             S.paper = el.dataset.paper; save(); refresh();
         }));
+        wrap.querySelector('[data-act="spread"]').addEventListener('click', rearrangeKeeps);
         wrap.querySelector('[data-act="scur"]').addEventListener('click', exportScrollCurrent);
         wrap.querySelector('[data-act="sall"]').addEventListener('click', exportScrollAll);
         wrap.querySelector('[data-act="cur"]').addEventListener('click', exportCurrent);
