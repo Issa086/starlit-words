@@ -4,7 +4,7 @@
 //  · 每一条消息都会变成背景里的一颗普通小星星，均匀散布在整片天空
 //  · 只有你亲手选取的片段，点「✦ 珍藏这段」后才会变成珍藏星
 //  · 设置面板：色系、亮度、星星大小、动画开关、导出
-//  · 导出：星图卷轴（HTML）/ 纯文字（Markdown）/ 完整备份（JSON）
+//  · 导出：星图长图（PNG，8 种风格）/ 网页卷轴（HTML，可存 PDF）/ 完整备份（JSON）
 //  · 自动识别深色 / 浅色主题
 // ═══════════════════════════════════════════════════
 
@@ -57,7 +57,7 @@
     };
 
     /* ───────── 设置（存在酒馆的扩展设置里，跟着账号走） ───────── */
-    const DEFAULTS = { palette: 'moon', brightness: 1, size: 1, rise: true, paper: 'night' };
+    const DEFAULTS = { palette: 'moon', brightness: 1, size: 1, rise: true, scrollStyle: 'night' };
     let S = Object.assign({}, DEFAULTS);
     function store() {
         const c = getCtx();
@@ -271,11 +271,14 @@
         const meta = document.createElement('div');
         meta.textContent = [k.who, k.when].filter(Boolean).join(' · ');
         Object.assign(meta.style, { marginTop: '8px', fontSize: '12px', letterSpacing: '1px', color: U.sub });
-        const rm = document.createElement('div');
+        const acts = document.createElement('div');
+        Object.assign(acts.style, { marginTop: '10px', fontSize: '12px', textAlign: 'right' });
+        const rm = document.createElement('span');
         rm.textContent = '移除这颗星';
-        Object.assign(rm.style, { marginTop: '10px', fontSize: '12px', color: U.sub, cursor: 'pointer', textAlign: 'right' });
+        Object.assign(rm.style, { color: U.sub, cursor: 'pointer' });
         rm.addEventListener('click', e => { e.stopPropagation(); removeKeep(k.id); });
-        card.append(q, meta, rm);
+        acts.append(rm);
+        card.append(q, meta, acts);
         card.style.display = 'block';
         const cw = card.offsetWidth, ch = card.offsetHeight, x = k.x * W, y = k.y * H;
         card.style.left = clamp(x - cw / 2, 8, W - cw - 8) + 'px';
@@ -413,35 +416,11 @@
         document.body.appendChild(a); a.click();
         setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
     }
-    const quoteMd = k => `> ${String(k.text).replace(/\n/g, '\n> ')}\n>\n> — ${[k.who, k.when].filter(Boolean).join(' · ')}\n`;
     const stamp = () => new Date().toISOString().slice(0, 10);
-    function exportCurrent() {
-        const c = getCtx(), owner = c && currentOwner(c);
-        if (!chatId || !keeps.length) { toast('这个聊天还没有珍藏的话'); return; }
-        const name = owner ? owner.name : '聊天';
-        const md = `# 星语 · ${name}\n\n*${chatId}*\n\n` + keeps.map(quoteMd).join('\n');
-        download(`星语-${name}-${stamp()}.md`, md, 'text/markdown;charset=utf-8');
-    }
-    function exportAll() {
-        const e = store();
-        if (!e) return;
-        let md = `# 星语 · 所有珍藏\n\n导出日期：${stamp()}\n`, total = 0;
-        for (const ent of Object.values(e.index)) {
-            const chats = Object.entries(ent.chats || {}).filter(([, v]) => v.keeps && v.keeps.length);
-            if (!chats.length) continue;
-            md += `\n## ${ent.name}\n`;
-            for (const [cid, v] of chats) {
-                md += `\n### ${cid}\n\n` + v.keeps.map(quoteMd).join('\n');
-                total += v.keeps.length;
-            }
-        }
-        if (!total) { toast('还没有任何珍藏的话'); return; }
-        download(`星语-所有珍藏-${stamp()}.md`, md, 'text/markdown;charset=utf-8');
-    }
     /* ───────── 星图卷轴（.html） ───────── */
     function scrollHTML(sections) {
         const p = PALETTES[S.palette] || PALETTES.moon;
-        const night = S.paper !== 'paper';
+        const night = !(SCROLL_STYLES[S.scrollStyle] || {}).light;
         const star = night ? p.star : p.star.map(v => v * 0.45 | 0);
         const keep = night ? p.keep : p.keep.map(v => v * 0.68 | 0);
         const theme = night
@@ -481,9 +460,11 @@ section{padding-top:30px}section+section{margin-top:40px}
 .who{margin-top:8px;font-size:12px;letter-spacing:2px;color:var(--sub);font-style:italic}
 .num{font-size:11px;letter-spacing:3px;color:rgba(var(--keep),.6);margin-bottom:4px}
 footer{text-align:center;padding:40px 0 34px;font-size:13px;letter-spacing:3px;color:var(--sub);font-style:italic;line-height:2}
+.pdf{position:fixed;top:16px;right:16px;z-index:5;padding:6px 14px;border-radius:4px;font:13px var(--serif);letter-spacing:2px;cursor:pointer;color:rgb(var(--keep));background:var(--bg);border:1px solid rgba(var(--keep),.45)}
+@media print{.pdf{display:none}@page{margin:0}.scroll{padding-top:40px}}
 @media (max-width:560px){h1{font-size:30px;letter-spacing:6px}.entry{grid-template-columns:44px 1fr}.node{grid-column:1}.l .text,.r .text{grid-column:2;text-align:left}.quote{font-size:16px}}
 </style></head>
-<body><canvas id="sky"></canvas>
+<body><canvas id="sky"></canvas><div class="pdf" onclick="window.print()">存成 PDF</div>
 <div class="scroll"><div class="rod"><span>✦</span></div><div id="main"></div><footer id="foot"></footer><div class="rod"><span>✦</span></div></div>
 <script>
 var D=${data};
@@ -552,6 +533,307 @@ if(document.fonts)document.fonts.ready.then(layout);
         download(`星图卷轴-全部-${stamp()}.html`, scrollHTML(sections), 'text/html;charset=utf-8');
     }
 
+    /* ───────── 分享图片：长图 / 单句卡片（.png） ───────── */
+    const FONT = "'Noto Serif SC','Songti SC','Source Han Serif SC','Noto Serif TC',serif";
+    let fontsReady = null;
+    function ensureFonts() {
+        if (fontsReady) return fontsReady;
+        fontsReady = new Promise(res => {
+            let link = document.getElementById('starlit-words-font');
+            const go = () => {
+                const loads = document.fonts ? Promise.all([
+                    document.fonts.load(`300 36px 'Noto Serif SC'`),
+                    document.fonts.load(`400 24px 'Noto Serif SC'`),
+                    document.fonts.load(`600 24px 'Noto Serif SC'`),
+                ]).catch(() => {}) : Promise.resolve();
+                Promise.race([loads, new Promise(r => setTimeout(r, 2500))]).then(res);
+            };
+            if (!link) {
+                link = document.createElement('link');
+                link.id = 'starlit-words-font'; link.rel = 'stylesheet';
+                link.href = 'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&display=swap';
+                link.onload = go; link.onerror = go;
+                document.head.appendChild(link);
+                setTimeout(go, 3000);
+            } else go();
+        });
+        return fontsReady;
+    }
+    /* 长图风格：夜空、宣纸跟着色系走；其他六种有自己的配色和卷首图案 */
+    const SCROLL_STYLES = {
+        night:    { name: '夜空' },
+        paper:    { name: '宣纸', light: true },
+        dusk:     { name: '暮色', bg: [[0, '#1b1a3a'], [0.5, '#4a2f5c'], [1, '#d98a7a']], ink: [255, 244, 236], sub: [255, 226, 214], acc: [255, 214, 170], star: [255, 240, 230],
+                    deco: (g, w, r, mk) => crescent(g, mk, w * 0.74, 230, 62, [255, 232, 200], 0.95, 0.38) },
+        midnight: { name: '子夜', bg: [[0, '#070b1d'], [1, '#13234a']], ink: [226, 234, 255], sub: [180, 196, 236], acc: [200, 220, 255], star: [210, 225, 255],
+                    deco: (g, w, r) => constellation(g, 150, 130, 780, 260, [210, 225, 255], r) },
+        lavender: { name: '薰衣草', light: true, bg: [[0, '#e9e2f6'], [1, '#f8e9ef']], ink: [72, 56, 96], sub: [120, 100, 150], acc: [150, 120, 190], star: [150, 120, 190],
+                    deco: (g, w) => orbits(g, w / 2, 270, [150, 120, 190]) },
+        dawn:     { name: '晨雾', light: true, bg: [[0, '#f4efe4'], [1, '#ece4d4']], ink: [70, 58, 46], sub: [120, 104, 86], acc: [180, 140, 70], star: [180, 140, 70],
+                    deco: (g, w, r, mk) => moonRow(g, mk, w / 2, 250, [180, 140, 70]) },
+        aurora:   { name: '极光', bg: [[0, '#04121a'], [1, '#0b2230']], ink: [224, 246, 240], sub: [170, 214, 206], acc: [150, 240, 210], star: [220, 245, 240],
+                    deco: (g, w) => aurora(g, w, [90, 230, 180], [170, 120, 240]) },
+        sakura:   { name: '樱夜', bg: [[0, '#1e0f1e'], [0.5, '#4b1f3a'], [1, '#8a4660']], ink: [255, 236, 242], sub: [244, 200, 214], acc: [255, 196, 214], star: [255, 220, 232],
+                    deco: (g, w, r) => {
+                        shootingStar(g, w * 0.82, 200, 380, [255, 220, 232]); shootingStar(g, w * 0.38, 320, 180, [255, 220, 232]);
+                        for (let i = 0; i < 9; i++) paintSparkle(g, 80 + r() * (w - 160), 120 + r() * 320, 0.8 + r() * 1.4, [255, 210, 226], 0.8);
+                    } },
+    };
+    function paperTheme() {
+        const key = SCROLL_STYLES[S.scrollStyle] ? S.scrollStyle : 'night';
+        const p = PALETTES[S.palette] || PALETTES.moon;
+        if (key === 'night') return { bg: '#0a0b12', ink: 'rgba(226,229,242,0.92)', sub: 'rgba(190,198,222,0.55)', star: p.star, keep: p.keep, skyA: 0.45, mw: 0.12 };
+        if (key === 'paper') return { bg: '#f3eee3', ink: 'rgba(58,50,42,0.92)', sub: 'rgba(58,50,42,0.52)', star: p.star.map(v => v * 0.45 | 0), keep: p.keep.map(v => v * 0.68 | 0), skyA: 0.28, mw: 0.07 };
+        const st = SCROLL_STYLES[key];
+        return { grad: st.bg, bg: st.bg[0][1], ink: rgba(st.ink, 0.94), sub: rgba(st.sub, 0.65), star: st.star, keep: st.acc,
+                 skyA: st.light ? 0.3 : 0.45, mw: st.light ? 0.07 : 0.12, deco: st.deco };
+    }
+    const mkCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = Math.ceil(w); c.height = Math.ceil(h); return c; };
+    function crescent(g, mk, x, y, R, c, a, phase) {
+        const cv = mk(R * 2 + 8, R * 2 + 8), o = cv.getContext('2d');
+        o.fillStyle = rgba(c, a); o.beginPath(); o.arc(R + 4, R + 4, R, 0, TAU); o.fill();
+        o.globalCompositeOperation = 'destination-out';
+        o.beginPath(); o.arc(R + 4 + R * phase * 2, R + 4 - R * phase * 0.6, R, 0, TAU); o.fill();
+        const gl = g.createRadialGradient(x, y, R * 0.6, x, y, R * 2.2);
+        gl.addColorStop(0, rgba(c, a * 0.18)); gl.addColorStop(1, rgba(c, 0));
+        g.fillStyle = gl; g.beginPath(); g.arc(x, y, R * 2.2, 0, TAU); g.fill();
+        g.drawImage(cv, x - R - 4, y - R - 4);
+    }
+    function constellation(g, x0, y0, w, h, c, r) {
+        const pts = []; for (let i = 0; i < 7; i++) pts.push([x0 + r() * w, y0 + r() * h]);
+        pts.sort((a, b) => a[0] - b[0]);
+        g.strokeStyle = rgba(c, 0.35); g.lineWidth = 1.2;
+        g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke();
+        g.beginPath(); g.moveTo(pts[2][0], pts[2][1]); g.lineTo(pts[5][0], pts[5][1] - 40); g.lineTo(pts[6][0], pts[6][1]); g.stroke();
+        pts.forEach(([x, y], i) => paintSparkle(g, x, y, i % 3 ? 1.2 : 2, c, 0.9));
+        paintSparkle(g, pts[5][0], pts[5][1] - 40, 1.4, c, 0.9);
+    }
+    function orbits(g, x, y, c) {
+        g.strokeStyle = rgba(c, 0.28); g.lineWidth = 1.2;
+        [[260, 90], [360, 130], [460, 170]].forEach(([a, b], i) => {
+            g.save(); g.translate(x, y); g.rotate(-0.25); g.setLineDash(i === 1 ? [4, 10] : []);
+            g.beginPath(); g.ellipse(0, 0, a, b, 0, 0, TAU); g.stroke(); g.restore();
+        });
+        g.setLineDash([]);
+        g.fillStyle = rgba(c, 0.85); g.beginPath(); g.arc(x, y, 26, 0, TAU); g.fill();
+        g.strokeStyle = rgba(c, 0.85); g.lineWidth = 2.5;
+        g.save(); g.translate(x, y); g.rotate(-0.25); g.beginPath(); g.ellipse(0, 0, 50, 12, 0, 0, TAU); g.stroke(); g.restore();
+        [[x + 300, y - 120, 7], [x - 330, y + 60, 5], [x + 150, y + 150, 9]].forEach(([px, py, pr]) => {
+            g.fillStyle = rgba(c, 0.8); g.beginPath(); g.arc(px, py, pr, 0, TAU); g.fill();
+        });
+    }
+    function moonRow(g, mk, cx, y, c) {
+        // 新月 → 满月 → 残月：遮挡圆偏移越少，月牙越细
+        const R = 24;
+        [0.35, 0.9, 1.5, 0, -1.5, -0.9, -0.35].forEach((p, i) => {
+            const x = cx + (i - 3) * 92;
+            g.strokeStyle = rgba(c, 0.3); g.lineWidth = 1; g.beginPath(); g.arc(x, y, R, 0, TAU); g.stroke();
+            const cv = mk(56, 56), o = cv.getContext('2d');
+            o.fillStyle = rgba(c, 0.9); o.beginPath(); o.arc(28, 28, R, 0, TAU); o.fill();
+            if (p) { o.globalCompositeOperation = 'destination-out'; o.beginPath(); o.arc(28 + p * R, 28, R, 0, TAU); o.fill(); }
+            g.drawImage(cv, x - 28, y - 28);
+        });
+    }
+    function aurora(g, w, c1, c2) {
+        // 极光光帘：一条条细细的竖光，从上往下渐亮再渐淡，沿着波浪排开
+        g.save(); g.globalCompositeOperation = 'lighter';
+        [[c1, 250, 0.34, 0], [c2, 170, 0.22, 2.1]].forEach(([c, base, a, ph]) => {
+            for (let x = -20; x < w + 20; x += 3) {
+                const t = x / w, yc = base + Math.sin(t * 5.2 + ph) * 55 + Math.sin(t * 13 + ph * 2) * 14;
+                const amp = a * (0.55 + 0.45 * Math.sin(t * 9 + ph * 3)) * (0.7 + 0.3 * Math.sin(t * 31));
+                const top = yc - 70, bot = yc + 260, gr = g.createLinearGradient(0, top, 0, bot);
+                gr.addColorStop(0, rgba(c, 0)); gr.addColorStop(0.22, rgba(c, amp)); gr.addColorStop(0.45, rgba(c, amp * 0.5)); gr.addColorStop(1, rgba(c, 0));
+                g.fillStyle = gr; g.fillRect(x, top, 3.2, bot - top);
+            }
+        });
+        g.restore();
+    }
+    function shootingStar(g, x, y, len, c) {
+        const gr = g.createLinearGradient(x, y, x - len, y - len * 0.45);
+        gr.addColorStop(0, rgba(c, 0.9)); gr.addColorStop(1, rgba(c, 0));
+        g.strokeStyle = gr; g.lineWidth = 2.4; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x - len, y - len * 0.45); g.stroke();
+        paintSparkle(g, x, y, 2.2, c, 1);
+    }
+    // 中文排版：标点不放在行首；再把每一行的长度拉平均，避免最后一行只剩一两个字
+    const NO_START = '，。、；：！？」』）》〉…—,.!?;:)';
+    function wrapRaw(g, text, maxW) {
+        const out = [];
+        String(text).split('\n').forEach(par => {
+            let line = '';
+            for (const ch of par) {
+                if (g.measureText(line + ch).width > maxW && line) {
+                    if (NO_START.includes(ch) && line.length > 1) { out.push(line.slice(0, -1)); line = line.slice(-1) + ch; }
+                    else { out.push(line); line = ch; }
+                } else line += ch;
+            }
+            out.push(line);
+        });
+        return out;
+    }
+    function wrapText(g, text, maxW) {
+        const out = [];
+        String(text).split('\n').forEach(par => {
+            const full = g.measureText(par).width, n = Math.ceil(full / maxW);
+            const lines = wrapRaw(g, par, n > 1 ? Math.min(maxW, full / n + 40) : maxW);
+            out.push(...(lines.length > n && n > 1 ? wrapRaw(g, par, maxW) : lines));
+        });
+        return out;
+    }
+    function paintSky(g, w, h, T, seed) {
+        if (T.grad) {
+            const bg = g.createLinearGradient(0, 0, 0, h);
+            T.grad.forEach(([o, c]) => bg.addColorStop(o, c));
+            g.fillStyle = bg;
+        } else g.fillStyle = T.bg;
+        g.fillRect(0, 0, w, h);
+        const r = seeded(seed);
+        const n = Math.floor(w * h / 2600);
+        for (let i = 0; i < n; i++) {
+            g.fillStyle = rgba(T.star, r() * T.skyA + 0.06);
+            g.beginPath(); g.arc(r() * w, r() * h, r() * 1.1 + 0.3, 0, TAU); g.fill();
+        }
+        const m = Math.floor(900 * h / 2000);
+        for (let i = 0; i < m; i++) {
+            const t = r(), off = (r() + r() + r() - 1.5) * 140;
+            g.fillStyle = rgba(T.star, 0.04 + r() * T.mw);
+            g.beginPath(); g.arc(w * (0.15 + 0.7 * t) + off * 0.6, h * t + off, r() * 1.3 + 0.3, 0, TAU); g.fill();
+        }
+    }
+    function paintRod(g, w, y, T) {
+        g.strokeStyle = rgba(T.keep, 0.4); g.lineWidth = 1.2;
+        [[80, w / 2 - 34], [w / 2 + 34, w - 80]].forEach(([a, b]) => {
+            g.beginPath(); g.moveTo(a, y - 3); g.lineTo(b, y - 3); g.stroke();
+            g.strokeStyle = rgba(T.keep, 0.18);
+            g.beginPath(); g.moveTo(a, y + 3); g.lineTo(b, y + 3); g.stroke();
+            g.strokeStyle = rgba(T.keep, 0.4);
+        });
+        paintSparkle(g, w / 2, y, 2.4, T.keep, 0.85);
+    }
+    function paintSparkle(g, x, y, s, c, a) {
+        const gr = g.createRadialGradient(x, y, 0, x, y, s * 7);
+        gr.addColorStop(0, rgba(c, a * 0.35)); gr.addColorStop(1, rgba(c, 0));
+        g.fillStyle = gr; g.beginPath(); g.arc(x, y, s * 7, 0, TAU); g.fill();
+        g.fillStyle = rgba(c, a);
+        g.beginPath();
+        g.moveTo(x, y - s * 4); g.quadraticCurveTo(x, y, x + s * 4, y);
+        g.quadraticCurveTo(x, y, x, y + s * 4); g.quadraticCurveTo(x, y, x - s * 4, y);
+        g.quadraticCurveTo(x, y, x, y - s * 4); g.fill();
+    }
+    function setSpacing(g, px) { if ('letterSpacing' in g) g.letterSpacing = px + 'px'; }
+    const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    const cnNum = n => n < 10 ? CN[n - 1] : n >= 100 ? String(n) : (Math.floor(n / 10) > 1 ? CN[Math.floor(n / 10) - 1] : '') + '十' + (n % 10 ? CN[n % 10 - 1] : '');
+
+    // 一张长图（一卷）。珍藏太多时分卷，避免手机打不开超长图片
+    function renderScrollImage(sec, items, startNo, part, parts) {
+        const T = paperTheme(), w = 1080;
+        const meas = document.createElement('canvas').getContext('2d');
+        meas.font = `300 36px ${FONT}`;
+        const lay = items.map(k => {
+            const lines = wrapText(meas, '「' + k.text + '」', 400);
+            const h = Math.max(210, 34 + lines.length * 60 + 50 + 70);
+            return { k, lines, h };
+        });
+        const off = T.deco ? 400 : 0, headH = 430 + off, footH = 300;
+        const h = headH + lay.reduce((s, e) => s + e.h, 0) + footH;
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const g = cv.getContext('2d');
+        paintSky(g, w, h, T, hash(sec.title + part));
+        paintRod(g, w, 80, T);
+        paintRod(g, w, h - 80, T);
+        if (T.deco) T.deco(g, w, seeded(hash(sec.title + 'deco' + part)), mkCanvas);
+
+        g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.fillStyle = T.sub; g.font = `22px ${FONT}`; setSpacing(g, 10);
+        g.fillText('STARLIT WORDS · 星语', w / 2, 200 + off);
+        setSpacing(g, 14); g.font = `300 72px ${FONT}`;
+        const nameW = g.measureText(sec.title).width, zuoW = g.measureText('座').width, x0 = w / 2 - (nameW + zuoW) / 2;
+        g.textAlign = 'left';
+        g.fillStyle = rgba(T.keep, 1); g.fillText(sec.title, x0, 300 + off);
+        g.fillStyle = T.ink; g.fillText('座', x0 + nameW, 300 + off);
+        g.textAlign = 'center'; setSpacing(g, 4);
+        g.fillStyle = T.sub; g.font = `italic 24px ${FONT}`;
+        const K = sec.keeps;
+        const meta = [K[0] && K[0].when ? `${K[0].when} — ${K[K.length - 1].when}` : '', `${K.length} 颗珍藏`,
+            sec.total ? `${Number(sec.total).toLocaleString()} 句对话` : '', parts > 1 ? `卷${cnNum(part)} / ${cnNum(parts)}` : '']
+            .filter(Boolean).join(' · ');
+        wrapText(g, meta, 900).forEach((ln, i) => g.fillText(ln, w / 2, 360 + off + i * 34));
+
+        let y = headH;
+        const nodes = lay.map(e => {
+            const ny = y + e.h / 2, nx = w / 2 + (u01(hash(e.k.text + 'x')) - 0.5) * 40;
+            y += e.h; return [nx, ny];
+        });
+        g.strokeStyle = rgba(T.keep, 0.32); g.lineWidth = 1.5; g.setLineDash([3, 10]);
+        g.beginPath();
+        nodes.forEach(([x, yy], i) => {
+            if (!i) { g.moveTo(x, yy); return; }
+            const [px, py] = nodes[i - 1], my = (py + yy) / 2;
+            g.bezierCurveTo(px, my, x, my, x, yy);
+        });
+        g.stroke(); g.setLineDash([]);
+
+        lay.forEach((e, i) => {
+            const [nx, ny] = nodes[i], left = (startNo + i) % 2 === 0;
+            g.fillStyle = rgba(T.keep, 0.1); g.beginPath(); g.arc(nx, ny, 22, 0, TAU); g.fill();
+            paintSparkle(g, nx, ny, 3 + u01(hash(e.k.text)) * 1.2, T.keep, 1);
+            const tx = left ? w / 2 - 70 : w / 2 + 70;
+            g.textAlign = left ? 'right' : 'left';
+            const blockH = 34 + e.lines.length * 60 + 44;
+            let ty = ny - blockH / 2 + 22;
+            setSpacing(g, 6); g.font = `20px ${FONT}`; g.fillStyle = rgba(T.keep, 0.65);
+            g.fillText(`第${cnNum(startNo + i + 1)}颗`, tx, ty);
+            setSpacing(g, 1); g.font = `300 36px ${FONT}`; g.fillStyle = T.ink;
+            e.lines.forEach(ln => { ty += 60; g.fillText(ln, tx, ty); });
+            setSpacing(g, 3); g.font = `italic 22px ${FONT}`; g.fillStyle = T.sub;
+            g.fillText([e.k.who, e.k.when].filter(Boolean).join(' · '), tx, ty + 46);
+        });
+
+        g.textAlign = 'center'; setSpacing(g, 4);
+        g.fillStyle = T.sub; g.font = `italic 24px ${FONT}`;
+        g.fillText(`${sec.title}座 · 共 ${K.length} 颗星`, w / 2, h - 190);
+        g.fillText(`${stamp()} · 摘自 SillyTavern · 星语`, w / 2, h - 148);
+        return cv;
+    }
+    function savePNG(cv, name) {
+        return new Promise(res => cv.toBlob(b => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(b); a.download = name;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); res(); }, 800);
+        }, 'image/png'));
+    }
+    const PER_IMAGE = 10;
+    async function exportImages(sections) {
+        toast('正在画星图，请稍候……');
+        await ensureFonts();
+        for (const sec of sections) {
+            const parts = Math.ceil(sec.keeps.length / PER_IMAGE);
+            for (let p = 0; p < parts; p++) {
+                const items = sec.keeps.slice(p * PER_IMAGE, (p + 1) * PER_IMAGE);
+                const cv = renderScrollImage(sec, items, p * PER_IMAGE, p + 1, parts);
+                await savePNG(cv, `星图-${sec.title}${parts > 1 ? '-卷' + (p + 1) : ''}-${stamp()}.png`);
+            }
+        }
+    }
+    function exportImageCurrent() {
+        const c = getCtx(), owner = c && currentOwner(c);
+        if (!chatId || !keeps.length) { toast('这个聊天还没有珍藏的话'); return; }
+        exportImages([{ title: owner ? owner.name : '聊天', total: stars.length, keeps: keeps.map(k => ({ text: k.text, who: k.who, when: k.when })) }]);
+    }
+    function exportImageAll() {
+        const e = store();
+        if (!e) return;
+        const sections = [];
+        for (const ent of Object.values(e.index)) {
+            const chats = Object.values(ent.chats || {}), ks = chats.flatMap(v => v.keeps || []);
+            if (ks.length) sections.push({ title: ent.name, total: chats.reduce((s, v) => s + (v.msgs || 0), 0), keeps: ks });
+        }
+        if (!sections.length) { toast('还没有任何珍藏的话'); return; }
+        exportImages(sections);
+    }
+
     function exportBackup() {
         const e = store();
         if (!e) return;
@@ -582,9 +864,9 @@ if(document.fonts)document.fonts.ready.then(layout);
         Object.assign(spread.style, { cursor: 'pointer', color: U.sub, fontSize: '12px' });
         spread.addEventListener('click', () => { rearrangeKeeps(); renderList(); });
         const exp = document.createElement('div');
-        exp.textContent = '导出卷轴';
+        exp.textContent = '长图';
         Object.assign(exp.style, { cursor: 'pointer', color: U.sub, fontSize: '12px' });
-        exp.addEventListener('click', exportScrollCurrent);
+        exp.addEventListener('click', exportImageCurrent);
         const close = document.createElement('div');
         close.textContent = '✕';
         Object.assign(close.style, { cursor: 'pointer', color: U.sub, padding: '0 4px' });
@@ -675,32 +957,32 @@ if(document.fonts)document.fonts.ready.then(layout);
                     <div class="sw-checks">
                         <label><input type="checkbox" data-k="rise">新消息升起动画</label>
                     </div>
-                    <div class="sw-sec">星图卷轴</div>
-                    <div class="sw-row">
-                        <span class="sw-name">卷轴底色</span>
-                        <span class="sw-btn" data-paper="night">夜空</span>
-                        <span class="sw-btn" data-paper="paper">宣纸</span>
+                    <div class="sw-sec">星图长图</div>
+                    <div class="sw-swatches">${Object.entries(SCROLL_STYLES).map(([k, st]) => {
+                        const p = PALETTES.moon;
+                        const a = st.bg ? st.bg[0][1] : (k === 'paper' ? '#f3eee3' : '#0a0b12');
+                        const b = st.bg ? st.bg[st.bg.length - 1][1] : rgba(k === 'paper' ? p.keep.map(v => v * 0.68 | 0) : p.keep, 1);
+                        return `<div class="sw-sw" data-sty="${k}"><span class="sw-dot" style="background:${a};border:1px solid rgba(128,128,128,.4)"></span><span class="sw-dot" style="background:${b}"></span>${st.name}</div>`;
+                    }).join('')}
                     </div>
                     <div class="sw-row" style="flex-wrap:wrap">
-                        <span class="sw-btn" data-act="scur">本聊天卷轴</span>
-                        <span class="sw-btn" data-act="sall">全部卷轴</span>
+                        <span class="sw-name">下载长图</span>
+                        <span class="sw-btn" data-act="icur">本聊天</span>
+                        <span class="sw-btn" data-act="iall">全部</span>
                     </div>
-                    <div class="sw-sec">其他导出</div>
                     <div class="sw-row" style="flex-wrap:wrap">
-                        <span class="sw-btn" data-act="cur">本聊天文字（.md）</span>
-                        <span class="sw-btn" data-act="all">全部文字（.md）</span>
-                        <span class="sw-btn" data-act="bak">完整备份</span>
+                        <span class="sw-name">网页卷轴</span>
+                        <span class="sw-btn" data-act="scur">本聊天</span>
+                        <span class="sw-btn" data-act="sall">全部</span>
                     </div>
-                    <div class="sw-hint">「所有珍藏」会收录安装 v2 之后打开过的聊天。</div>
+                    <div class="sw-hint">长图是 .png，可以直接分享。夜空和宣纸会跟着上面的色系变化。网页卷轴用浏览器打开，里面可以存成 PDF。</div>
+                    <div class="sw-row" style="margin-top:4px"><span class="sw-btn" data-act="bak">完整备份（.json）</span></div>
                 </div></div>
             </div>`;
 
         const refresh = () => {
             wrap.querySelectorAll('.sw-sw').forEach(el => el.classList.toggle('on', el.dataset.pal === S.palette));
-            wrap.querySelectorAll('[data-paper]').forEach(el => {
-                el.style.borderColor = el.dataset.paper === S.paper ? 'rgba(128,128,128,.9)' : '';
-                el.style.fontWeight = el.dataset.paper === S.paper ? '600' : '';
-            });
+            wrap.querySelectorAll('[data-sty]').forEach(el => el.classList.toggle('on', el.dataset.sty === (S.scrollStyle || 'night')));
             wrap.querySelectorAll('[data-k]').forEach(el => {
                 const k = el.dataset.k;
                 if (el.type === 'checkbox') el.checked = !!S[k];
@@ -721,14 +1003,14 @@ if(document.fonts)document.fonts.ready.then(layout);
                 save(); refresh();
             });
         });
-        wrap.querySelectorAll('[data-paper]').forEach(el => el.addEventListener('click', () => {
-            S.paper = el.dataset.paper; save(); refresh();
+        wrap.querySelectorAll('[data-sty]').forEach(el => el.addEventListener('click', () => {
+            S.scrollStyle = el.dataset.sty; save(); refresh();
         }));
         wrap.querySelector('[data-act="spread"]').addEventListener('click', rearrangeKeeps);
+        wrap.querySelector('[data-act="icur"]').addEventListener('click', exportImageCurrent);
+        wrap.querySelector('[data-act="iall"]').addEventListener('click', exportImageAll);
         wrap.querySelector('[data-act="scur"]').addEventListener('click', exportScrollCurrent);
         wrap.querySelector('[data-act="sall"]').addEventListener('click', exportScrollAll);
-        wrap.querySelector('[data-act="cur"]').addEventListener('click', exportCurrent);
-        wrap.querySelector('[data-act="all"]').addEventListener('click', exportAll);
         wrap.querySelector('[data-act="bak"]').addEventListener('click', exportBackup);
 
         let tries = 0;
