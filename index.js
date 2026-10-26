@@ -3,9 +3,8 @@
 //
 //  · 每一条消息都会变成背景里的一颗普通小星星，均匀散布在整片天空
 //  · 只有你亲手选取的片段，点「✦ 珍藏这段」后才会变成珍藏星
-//  · 首页（还没进入任何聊天时）：每个角色是一个星系，点击即可进入聊天
-//  · 设置面板：色系、亮度、星星大小、星系数量、动画开关、导出
-//  · 导出：本聊天的珍藏 / 所有珍藏（Markdown）/ 完整备份（JSON）
+//  · 设置面板：色系、亮度、星星大小、动画开关、导出
+//  · 导出：星图卷轴（HTML）/ 纯文字（Markdown）/ 完整备份（JSON）
 //  · 自动识别深色 / 浅色主题
 // ═══════════════════════════════════════════════════
 
@@ -58,7 +57,7 @@
     };
 
     /* ───────── 设置（存在酒馆的扩展设置里，跟着账号走） ───────── */
-    const DEFAULTS = { palette: 'moon', brightness: 1, size: 1, rise: true, galaxies: true, galaxyCount: 8, paper: 'night' };
+    const DEFAULTS = { palette: 'moon', brightness: 1, size: 1, rise: true, paper: 'night' };
     let S = Object.assign({}, DEFAULTS);
     function store() {
         const c = getCtx();
@@ -156,10 +155,10 @@
         keeps = (id && meta && Array.isArray(meta[META_KEY])) ? meta[META_KEY] : [];
         detectTheme();
         canvas.style.mixBlendMode = isDark ? 'screen' : 'normal';
-        if (id) updateIndex(c, id); else buildGalaxies();
+        if (id) updateIndex(c, id);
     }
 
-    // 记录每个角色的消息数和珍藏，首页星系和「导出全部」用
+    // 记录每个角色的消息数和珍藏，「全部卷轴」和「全部文字」导出用
     function updateIndex(c, id) {
         const e = store(), owner = currentOwner(c);
         if (!e || !owner) return;
@@ -172,54 +171,6 @@
         };
         save();
     }
-
-    /* ───────── 首页星系 ───────── */
-    let galaxies = [];
-    function buildGalaxies() {
-        galaxies = [];
-        const c = getCtx(), e = store();
-        if (!c || !S.galaxies || !Array.isArray(c.characters)) return;
-        const lastOf = ch => {
-            const ent = e && e.index[ch.avatar];
-            return Math.max(ent ? ent.last || 0 : 0, Number(ch.date_last_chat) || Date.parse(ch.date_last_chat) || 0);
-        };
-        const list = c.characters.map((ch, i) => ({ ch, i })).filter(o => o.ch && o.ch.avatar);
-        list.sort((a, b) => lastOf(b.ch) - lastOf(a.ch));
-        const pick = list.slice(0, clamp(Math.round(S.galaxyCount), 1, 16));
-        const n = pick.length;
-        pick.forEach((o, k) => {
-            const ent = e && e.index[o.ch.avatar];
-            const chats = ent ? Object.values(ent.chats || {}) : [];
-            const tracked = chats.reduce((s, x) => s + (x.msgs || 0), 0);
-            const msgs = Math.max(tracked, Math.round((o.ch.chat_size || 0) / 350));
-            const keepN = chats.reduce((s, x) => s + ((x.keeps && x.keeps.length) || 0), 0);
-            const rand = seeded(hash(o.ch.avatar));
-            const scale = 0.35 + 0.65 * Math.min(1, Math.log(1 + msgs) / Math.log(3001));
-            const arms = rand() < 0.5 ? 2 : 3;
-            const count = 60 + Math.round(340 * scale);
-            const parts = [];
-            for (let p = 0; p < count; p++) {
-                const arm = p % arms, t = Math.pow(rand(), 0.8);
-                parts.push({
-                    t: t + (rand() - 0.5) * 0.06,
-                    a: arm * TAU / arms + t * 3.2 + (rand() - 0.5) * 0.7 * (1 - t * 0.4),
-                    s: 0.5 + rand() * 1.1,
-                    al: 0.35 + rand() * 0.65,
-                });
-            }
-            const golds = [];
-            for (let q = 0; q < Math.min(keepN, 24); q++) golds.push(parts[Math.floor(rand() * parts.length)]);
-            const ang = -Math.PI / 2 + k / Math.max(1, n) * TAU + 0.35;
-            galaxies.push({
-                chid: o.i, name: o.ch.name, msgs, keepN, parts, golds, scale,
-                fx: n === 1 ? 0.5 : 0.5 + 0.36 * Math.cos(ang),
-                fy: n === 1 ? 0.3 : 0.5 + 0.34 * Math.sin(ang),
-                tilt: 0.42 + rand() * 0.35, orient: rand() * Math.PI, spin: (rand() < 0.5 ? 1 : -1) * (0.02 + rand() * 0.02),
-            });
-        });
-    }
-    const galaxyR = g => Math.min(W, H) * 0.085 * g.scale;
-    let hoverGalaxy = null;
 
     /* ───────── 绘制 ───────── */
     function riseOrigin() {
@@ -285,41 +236,7 @@
         }
     }
 
-    function drawGalaxies(sec, C) {
-        const B = S.brightness, Z = S.size;
-        const U = ui();
-        for (const g of galaxies) {
-            const gx = g.fx * W, gy = g.fy * H, R = galaxyR(g);
-            const hov = hoverGalaxy === g, boost = hov ? 1.35 : 1;
-            const rot = sec * g.spin, co = Math.cos(g.orient), si = Math.sin(g.orient);
-            const core = g2.createRadialGradient(gx, gy, 0, gx, gy, R * 0.35);
-            core.addColorStop(0, rgba(C.star, Math.min(1, 0.45 * B * boost)));
-            core.addColorStop(1, rgba(C.star, 0));
-            g2.fillStyle = core; g2.beginPath(); g2.arc(gx, gy, R * 0.35, 0, TAU); g2.fill();
-            const place = p => {
-                const a = p.a + rot, rx = Math.cos(a) * p.t * R, ry = Math.sin(a) * p.t * R * g.tilt;
-                return [gx + rx * co - ry * si, gy + rx * si + ry * co];
-            };
-            for (const p of g.parts) {
-                const [x, y] = place(p), s = p.s * Z * 0.8;
-                g2.fillStyle = rgba(C.star, Math.min(1, (1 - p.t * 0.55) * p.al * 0.75 * B * boost));
-                g2.fillRect(x - s / 2, y - s / 2, s, s);
-            }
-            for (const p of g.golds) {
-                const [x, y] = place(p);
-                sparkle(x, y, 0.8 * Z, Math.min(1, 0.9 * B), C.keep);
-            }
-            g2.textAlign = 'center';
-            g2.font = `${hov ? 14 : 13}px serif`;
-            g2.fillStyle = rgba(C.star, Math.min(1, (hov ? 0.95 : 0.7) * B));
-            g2.fillText(g.name, gx, gy + R * g.tilt + 26);
-            g2.font = '11px serif';
-            g2.fillStyle = U.sub;
-            g2.fillText(`${g.msgs.toLocaleString()} 句` + (g.keepN ? ` · ${g.keepN} 颗珍藏` : ''), gx, gy + R * g.tilt + 42);
-        }
-    }
-
-    let running = true, rafId = 0, last = 0, lastTheme = 0, lastGalaxyCheck = 0;
+    let running = true, rafId = 0, last = 0, lastTheme = 0;
     function loop(t) {
         if (!running) return;
         rafId = requestAnimationFrame(loop);
@@ -328,14 +245,11 @@
         if (t - lastTheme > 3000) {
             detectTheme(); canvas.style.mixBlendMode = isDark ? 'screen' : 'normal'; lastTheme = t;
         }
-        // 首页时，角色列表可能晚一点才载入
-        if (!chatId && S.galaxies && !galaxies.length && t - lastGalaxyCheck > 2000) { buildGalaxies(); lastGalaxyCheck = t; }
         const sec = t / 1000, C = colors();
         g2.setTransform(1, 0, 0, 1, 0, 0);
         g2.clearRect(0, 0, canvas.width, canvas.height);
         g2.setTransform(dpr, 0, 0, dpr, 0, 0);
         if (chatId) drawChat(t, sec, C);
-        else if (S.galaxies) drawGalaxies(sec, C);
     }
 
     /* ───────── 展开文字的卡片 ───────── */
@@ -466,48 +380,26 @@
         hideCard(); renderList();
     }
 
-    /* ───────── 点击：聊天里点珍藏星，首页点星系 ───────── */
+    /* ───────── 点击珍藏星（只在没有被界面挡住的空白处） ───────── */
     const CHAT_BLOCK = '#sheld,#top-bar,#top-settings-holder,.drawer-content,#left-nav-panel,#right-nav-panel,' +
                        '.popup,dialog,#send_form,#starlit-words-card,#starlit-words-keepbtn,#starlit-words-list,' +
                        'input,textarea,button,a,select';
-    const HOME_BLOCK = '#top-bar,#top-settings-holder,.drawer-content,#left-nav-panel,#right-nav-panel,.popup,dialog,' +
-                       '#send_form,.mes,#starlit-words-list,input,textarea,button,a,select,label,.menu_button,' +
-                       '.recentChat,.welcomeRecent,.inline-drawer';
     function keepAt(x, y) {
         let best = null, bd = 18;
         for (const k of keeps) { const d = Math.hypot(k.x * W - x, k.y * H - y); if (d < bd) { bd = d; best = k; } }
         return best;
     }
-    function galaxyAt(x, y) {
-        for (const g of galaxies) if (Math.hypot(g.fx * W - x, g.fy * H - y) < Math.max(28, galaxyR(g) * 1.1)) return g;
-        return null;
-    }
-    async function openGalaxy(g) {
-        const c = getCtx();
-        try { if (c && typeof c.selectCharacterById === 'function') { await c.selectCharacterById(String(g.chid)); return; } } catch (e) {}
-        const el = document.querySelector(`.character_select[chid="${g.chid}"]`);
-        if (el) el.click(); else toast('找不到这个角色，请从角色列表进入');
-    }
     document.addEventListener('click', e => {
         if (card.contains(e.target) || keepBtn.contains(e.target)) return;
         const tg = e.target;
-        if (!chatId) {
-            if (!S.galaxies || (tg.closest && tg.closest(HOME_BLOCK))) return;
-            const g = galaxyAt(e.clientX, e.clientY);
-            if (g) openGalaxy(g);
-            return;
-        }
+        if (!chatId) return;
         if (tg.closest && tg.closest(CHAT_BLOCK)) { if (cardKeep) hideCard(); return; }
         const k = keepAt(e.clientX, e.clientY);
         if (k) showCard(k); else hideCard();
     });
     document.addEventListener('mousemove', e => {
         const tg = e.target;
-        if (!chatId) {
-            hoverGalaxy = (S.galaxies && !(tg.closest && tg.closest(HOME_BLOCK))) ? galaxyAt(e.clientX, e.clientY) : null;
-            document.body.style.cursor = hoverGalaxy ? 'pointer' : '';
-            return;
-        }
+        if (!chatId) return;
         if (tg.closest && tg.closest(CHAT_BLOCK)) return;
         document.body.style.cursor = keepAt(e.clientX, e.clientY) ? 'pointer' : '';
     }, { passive: true });
@@ -742,7 +634,6 @@ if(document.fonts)document.fonts.ready.then(layout);
     const SLIDERS = [
         ['brightness', '亮度', 0.3, 1.6, 0.05, v => Math.round(v * 100) + '%'],
         ['size', '星星大小', 0.6, 1.8, 0.05, v => '×' + (+v).toFixed(2).replace(/\.?0+$/, '')],
-        ['galaxyCount', '首页星系数', 1, 16, 1, v => String(Math.round(v))],
     ];
     function mountPanel() {
         const style = document.createElement('style');
@@ -783,7 +674,6 @@ if(document.fonts)document.fonts.ready.then(layout);
                     <div class="sw-row"><span class="sw-btn" data-act="spread">重新排列本聊天的珍藏星</span></div>
                     <div class="sw-checks">
                         <label><input type="checkbox" data-k="rise">新消息升起动画</label>
-                        <label><input type="checkbox" data-k="galaxies">首页显示角色星系</label>
                     </div>
                     <div class="sw-sec">星图卷轴</div>
                     <div class="sw-row">
@@ -829,7 +719,6 @@ if(document.fonts)document.fonts.ready.then(layout);
             el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
                 S[k] = el.type === 'checkbox' ? el.checked : parseFloat(el.value);
                 save(); refresh();
-                if (k === 'galaxyCount' || k === 'galaxies') buildGalaxies();
             });
         });
         wrap.querySelectorAll('[data-paper]').forEach(el => el.addEventListener('click', () => {
